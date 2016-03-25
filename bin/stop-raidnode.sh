@@ -34,4 +34,4 @@ fi
 
 export HADOOP_OPTS="$HADOOP_OPTS $HADOOP_RAIDNODE_OPTS"
 
-"$bin"/hadoop-daemon.sh --config $HADOOP_CONF_DIR stop org.apache.hadoop.raid.RaidNode
+"$bin"/hadoop-daemon.sh --config $HADOOP_CONF_DIR stop raidnode 

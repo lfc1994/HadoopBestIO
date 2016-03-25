@@ -30,7 +30,7 @@
           http://www.ibiblio.net/pub/packages/maven2
   -->
   <property name="repo.maven.org"
-    value="http://repo1.maven.org/maven2"
+    value="http://maven.oschina.net/content/groups/public"
     override="false"/>
   <property name="snapshot.apache.org"
     value="http://mirror.facebook.net/maven/repository"
