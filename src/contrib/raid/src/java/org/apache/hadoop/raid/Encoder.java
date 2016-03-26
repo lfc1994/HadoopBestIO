@@ -68,9 +68,14 @@ public class Encoder {
   Encoder(Configuration conf, Codec codec) {
     this.conf = conf;
     this.parallelism = conf.getInt("raid.encoder.parallelism",
-                                   DEFAULT_PARALLELISM);
+            DEFAULT_PARALLELISM);
     this.codec = codec;
-    this.code = codec.createErasureCode(conf);
+
+    //hadamard不是纠删码,与其他编码区别对待
+    if(!codec.id.equals("hadamard")){
+      this.code = codec.createErasureCode(conf);
+    }else code = null;
+
     this.rand = new Random();
     this.bufSize = conf.getInt("raid.encoder.bufsize", 1024 * 1024);
     this.writeBufs = new byte[codec.parityLength][];
@@ -106,31 +111,32 @@ public class Encoder {
    * @param srcFile The source file.
    * @param parityFile The parity file to be generated.
    */
-  public void encodeFile(
-    Configuration jobConf, FileSystem fs, Path srcFile, FileSystem parityFs,
-    Path parityFile, short parityRepl, long numStripes, long blockSize, 
-    Progressable reporter, StripeReader sReader)
-        throws IOException {
-    long expectedParityBlocks = numStripes * codec.parityLength;
-    long expectedParityFileSize = numStripes * blockSize * codec.parityLength;
-    
-    // Create a tmp file to which we will write first.
-    String jobID = RaidNode.getJobID(jobConf);
-    Path tmpDir = new Path(codec.tmpParityDirectory, jobID);
-    if (!parityFs.mkdirs(tmpDir)) {
-      throw new IOException("Could not create tmp dir " + tmpDir);
-    }
-    Path parityTmp = new Path(tmpDir,
-        parityFile.getName() + rand.nextLong());
-    // Writing out a large parity file at replication 1 is difficult since
-    // some datanode could die and we would not be able to close() the file.
-    // So write at replication 2 and then reduce it after close() succeeds.
-    short tmpRepl = parityRepl;
-    if (expectedParityBlocks >=
-        conf.getInt("raid.encoder.largeparity.blocks", 20)) {
-      if (parityRepl == 1) {
-        tmpRepl = 2;
-      }
+	public void encodeFile(
+			Configuration jobConf, FileSystem fs, Path srcFile, FileSystem parityFs,
+			Path parityFile, short parityRepl, long numStripes, long blockSize,
+			Progressable reporter, StripeReader sReader)
+			throws IOException {
+		long expectedParityBlocks = numStripes * codec.parityLength;
+		long expectedParityFileSize = numStripes * blockSize * codec.parityLength;
+
+		// Create a tmp file to which we will write first.
+		// 创建临时文件目录
+		String jobID = RaidNode.getJobID(jobConf);
+		Path tmpDir = new Path(codec.tmpParityDirectory, jobID);
+		if (!parityFs.mkdirs(tmpDir)) {
+			throw new IOException("Could not create tmp dir " + tmpDir);
+		}
+		// 创建临时校验文件(校验文件名称+随机数)
+		Path parityTmp = new Path(tmpDir, parityFile.getName() + rand.nextLong());
+		// 一次性向fs中写入一个大文件比较困难,分成两份来写.
+		// Writing out a large parity file at replication 1 is difficult since
+		// some datanode could die and we would not be able to close() the file.
+		// So write at replication 2 and then reduce it after close() succeeds.
+		short tmpRepl = parityRepl;
+		if (expectedParityBlocks >= conf.getInt("raid.encoder.largeparity.blocks", 20)) {
+			if (parityRepl == 1) {
+				tmpRepl = 2;
+			}
     }
     FSDataOutputStream out = parityFs.create(
                                parityTmp,

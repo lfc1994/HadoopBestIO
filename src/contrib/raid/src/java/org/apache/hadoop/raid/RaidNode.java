@@ -1157,7 +1157,11 @@ public abstract class RaidNode implements RaidProtocol {
       // ignore errors because the raid file might not exist yet.
     }
 
-    Encoder encoder = new Encoder(conf, codec);
+    //生成Encoder,hadamard算法使用hadamardEncoder.
+    Encoder encoder = null;
+    if(codec.id.equals("hadamard")) encoder = new HadamardEncoder(conf,codec);
+    else encoder = new Encoder(conf, codec);
+
     StripeReader sReader = null;
     if (codec.isDirRaid) {
       long numStripes = (blockNum % codec.stripeLength == 0) ?
