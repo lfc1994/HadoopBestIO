@@ -1,3 +1,9 @@
+# ignore build and IDEA file for all
 build/
 .idea/
 *.iml
+
+#ignore log and all conf
+/mylog.txt
+log/
+conf/
