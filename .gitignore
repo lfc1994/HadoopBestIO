@@ -3,7 +3,9 @@ build/
 .idea/
 *.iml
 
-#ignore log and all conf
-/mylog.txt
-log/
-conf/
+#ignore runtime related files
+/logs
+/conf
+/out
+/lib
+/hdfs

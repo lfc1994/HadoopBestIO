@@ -28,3 +28,6 @@ bin=`cd "$bin"; pwd`
 
 # start mapred daemons
 "$bin"/start-mapred.sh --config $HADOOP_CONF_DIR
+
+#start raidnode
+"$bin"/start-raidnode.sh --config $HADOOP_CONF_DIR

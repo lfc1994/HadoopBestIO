@@ -9,5 +9,52 @@
    <name>fs.default.name</name>
    <value>hdfs://localhost:9000</value>
 </property>
+<!-- raid part-->
+<property>
+  <name>raid.server.address</name>
+  <value>localhost:60000</value>
+</property>
+<!--
+<property>
+   <name>fs.hdfs.impl</name>
+   <value>org.apache.hadoop.hdfs.DistributedRaidFileSystem</value>
+</property>
+-->
+<property>
+  <name>raid.codecs.json</name>
+    <value>[
+{
+"id" : "rs",
+"parity_dir" : "/raid_rs",
+"stripe_length" : 10,
+"parity_length" : 4,
+"priority" : 100,
+"erasure_code" : "org.apache.hadoop.raid.ReedSolomonCode",
+"description" : "ReedSolomonCode code",
+"simulate_block_fix": false
+},
+{
+"id" : "xor",
+"parity_dir" : "/raid_xor",
+"stripe_length" : 10,
+"parity_length" : 1,
+"priority" : 200,
+"erasure_code" : "org.apache.hadoop.raid.XORCode",
+"description" : "XORCode code",
+"simulate_block_fix": false
+},
+{
+"id":"hadamard",
+"parity_dir":"/raid_hadamard",
+"stripe_length":4,
+"parity_length":2,
+"priority":300,
+"erasure_code":"org.apache.hadoop.raid.HadamardCode",
+"description":"Hadamard Code",
+"simulate_block_fix":false
+}
+]</value>
+  <description>JSon string that contains all Raid codecs</description>
+</property>
 
 </configuration>

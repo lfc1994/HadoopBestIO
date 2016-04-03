@@ -2,9 +2,7 @@
 <?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
 
 <!-- Put site-specific property overrides in this file. -->
-
 <configuration>
-
 <property>
   <name>dfs.support.append</name>
   <value>true</value>
@@ -13,8 +11,68 @@
 </property>
 
 <property>
+  <name>dfs.http.address</name>
+  <value>localhost:50070</value>
+</property>
+
+<property>
+  <name>dfs.name.dir</name>
+  <value>/Users/JackJay/workspace/HadoopUSC/hdfs/name</value>
+</property>
+
+<property>
+  <name>dfs.data.dir</name>
+  <value>/Users/JackJay/workspace/HadoopUSC/hdfs/data</value>
+</property>
+<property>
+  <name>dfs.tmp.dir</name>
+  <value>/Users/JackJay/workspace/HadoopUSC/hdfs/tmp</value>
+</property>
+
+<property>
   <name>dfs.replication</name>
-  <value>1</value>
+  <value>3</value>
+</property>
+<property>
+  <name>dfs.block.replicator.classname</name>
+  <value>org.apache.hadoop.hdfs.server.namenode.BlockPlacementPolicyRaid</value>
+</property>
+
+<property>
+  <name>raid.codecs.json</name>
+    <value>[
+{
+"id" : "rs",
+"parity_dir" : "/raid_rs",
+"stripe_length" : 10,
+"parity_length" : 4,
+"priority" : 100,
+"erasure_code" : "org.apache.hadoop.raid.ReedSolomonCode",
+"description" : "ReedSolomonCode code",
+"simulate_block_fix": false
+},
+{
+"id" : "xor",
+"parity_dir" : "/raid_xor",
+"stripe_length" : 10,
+"parity_length" : 1,
+"priority" : 200,
+"erasure_code" : "org.apache.hadoop.raid.XORCode",
+"description" : "XORCode code",
+"simulate_block_fix": false
+},
+{
+"id":"hadamard",
+"parity_dir":"/raid_hadamard",
+"stripe_length":4,
+"parity_length":2,
+"priority":300,
+"erasure_code":"org.apache.hadoop.raid.HadamardCode",
+"description":"Hadamard Code",
+"simulate_block_fix":false
+}
+]</value>
+  <description>JSon string that contains all Raid codecs</description>
 </property>
 
 </configuration>

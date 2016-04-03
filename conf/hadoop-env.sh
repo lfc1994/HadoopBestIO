@@ -6,7 +6,7 @@
 # remote nodes.
 
 # The java implementation to use.  Required.
-# export JAVA_HOME=/usr/lib/j2sdk1.5-sun
+export JAVA_HOME=/Library/Java/JavaVirtualMachines/jdk1.7.0_79.jdk/Contents/Home
 
 # Extra Java CLASSPATH elements.  Optional.
 # export HADOOP_CLASSPATH=
@@ -28,7 +28,7 @@ export HADOOP_NAMENODE_OPTS="-Dcom.sun.management.jmxremote.port=8998 -Dcom.sun.
 
 # The only user who can start hadoop daemons. 
 # If this is not set, any user can start hadoop daemons.  
-export HADOOP_USERNAME="hadoop"
+export HADOOP_USERNAME="JackJay"
 
 # Java Runtime garbage collection options to pass to all Hadoop
 # servers (Namenode, Jobtracker, Datanode, Tasktracker). This must end

@@ -25,3 +25,4 @@ bin=`cd "$bin"; pwd`
 
 "$bin"/stop-mapred.sh --config $HADOOP_CONF_DIR
 "$bin"/stop-dfs.sh --config $HADOOP_CONF_DIR
+"$bin"/stop-raidnode.sh --config $HADOOP_CONF_DIR
