@@ -125,7 +125,7 @@ public class ParityFilePair {
       }
     } catch (java.io.FileNotFoundException e) {
     }
-
+    RaidNode.LOG.info("\noutPath:"+outPath.toString());
     return null; // NULL if no parity file
   }
 

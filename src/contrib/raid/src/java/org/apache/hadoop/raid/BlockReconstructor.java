@@ -50,725 +50,738 @@ import org.apache.hadoop.util.Progressable;
 
 /**
  * this class implements the actual reconstructing functionality
- * we keep this in a separate class so that 
+ * we keep this in a separate class so that
  * the distributed block fixer can use it
- */ 
+ */
 abstract class BlockReconstructor extends Configured {
 
-  public static final Log LOG = LogFactory.getLog(BlockReconstructor.class);
+	public static final Log LOG = LogFactory.getLog(BlockReconstructor.class);
 
-  BlockReconstructor(Configuration conf) throws IOException {
-    super(conf);
-  }
+	BlockReconstructor(Configuration conf) throws IOException {
+		super(conf);
+	}
 
-  /**
-   * Is the path a parity file of a given Codec?
-   */
-  boolean isParityFile(Path p, Codec c) {
-    return isParityFile(p.toUri().getPath(), c);
-  }
+	/**
+	 * Is the path a parity file of a given Codec?
+	 */
+	boolean isParityFile(Path p, Codec c) {
+		return isParityFile(p.toUri().getPath(), c);
+	}
 
-  boolean isParityFile(String pathStr, Codec c) {
-    if (pathStr.contains(RaidNode.HAR_SUFFIX)) {
-      return false;
-    }
-    return pathStr.startsWith(c.getParityPrefix());
-  }
-  
-  /**
-   * Fix a file, report progess.
-   *
-   * @return true if file was reconstructed, false if no reconstruction 
-   * was necessary or possible.
-   */
-  boolean reconstructFile(Path srcPath, Context context)
-      throws IOException, InterruptedException {
-    Progressable progress = context;
-    if (progress == null) {
-      progress = RaidUtils.NULL_PROGRESSABLE;
-    }
+	boolean isParityFile(String pathStr, Codec c) {
+		if (pathStr.contains(RaidNode.HAR_SUFFIX)) {
+			return false;
+		}
+		return pathStr.startsWith(c.getParityPrefix());
+	}
 
-    if (RaidNode.isParityHarPartFile(srcPath)) {
-      return processParityHarPartFile(srcPath, progress);
-    }
+	/**
+	 * Fix a file, report progess.
+	 *
+	 * @return true if file was reconstructed, false if no reconstruction
+	 * was necessary or possible.
+	 */
+	boolean reconstructFile(Path srcPath, Context context)
+			throws IOException, InterruptedException {
+		Progressable progress = context;
+		if (progress == null) {
+			progress = RaidUtils.NULL_PROGRESSABLE;
+		}
 
-    // Reconstruct parity file
-    for (Codec codec : Codec.getCodecs()) {
-      if (isParityFile(srcPath, codec)) {
-        return processParityFile(srcPath, 
-            new Decoder(getConf(), codec), context);
-      }
-    }
+		if (RaidNode.isParityHarPartFile(srcPath)) {
+			return processParityHarPartFile(srcPath, progress);
+		}
 
-    // Reconstruct source file
-    for (Codec codec : Codec.getCodecs()) {
-      ParityFilePair ppair = ParityFilePair.getParityFile(
-          codec, srcPath, getConf());
-      if (ppair != null) {
-        Decoder decoder = new Decoder(getConf(), codec);
-        return processFile(srcPath, ppair, decoder, context);
-      }
-    }
+		// Reconstruct parity file
+		for (Codec codec : Codec.getCodecs()) {
+			if (isParityFile(srcPath, codec)) {
+				return processParityFile(srcPath,
+						new Decoder(getConf(), codec), context);
+			}
+		}
 
-    // there was nothing to do
-    LOG.warn("Could not find parity file for source file "
-        + srcPath + ", ignoring...");
-    return false;    
-  }
+		// Reconstruct source file
+		for (Codec codec : Codec.getCodecs()) {
+			LOG.info("codec:"+codec.id);
+			ParityFilePair ppair = ParityFilePair.getParityFile(
+					codec, srcPath, getConf());
+			if (ppair != null) {
+				Decoder decoder = null;
+				if(codec.id.equals("rs_local")){
+					decoder = new LocalRSDecoder(getConf());
+				}
+				else decoder = new Decoder(getConf(), codec);
 
-  /**
-   * Sorts source files ahead of parity files.
-   */
-  void sortLostFiles(List<String> files) {
-    // TODO: We should first fix the files that lose more blocks
-    Comparator<String> comp = new Comparator<String>() {
-      public int compare(String p1, String p2) {
-        Codec c1 = null;
-        Codec c2 = null;
-        for (Codec codec : Codec.getCodecs()) {
-          if (isParityFile(p1, codec)) {
-            c1 = codec;
-          } else if (isParityFile(p2, codec)) {
-            c2 = codec;
-          }
-        }
-        if (c1 == null && c2 == null) {
-          return 0; // both are source files
-        }
-        if (c1 == null && c2 != null) {
-          return -1; // only p1 is a source file
-        }
-        if (c2 == null && c1 != null) {
-          return 1; // only p2 is a source file
-        }
-        return c2.priority - c1.priority; // descending order
-      }
-    };
-    Collections.sort(files, comp);
-  }
+				return processFile(srcPath, ppair, decoder, context);
+			}
+		}
 
-  /**
-   * Returns a DistributedFileSystem hosting the path supplied.
-   */
-  protected DistributedFileSystem getDFS(Path p) throws IOException {
-    return (DistributedFileSystem) p.getFileSystem(getConf());
-  }
+		// there was nothing to do
+		LOG.warn("Could not find parity file for source file "
+				+ srcPath + ", ignoring...");
+		return false;
+	}
 
-  /**
-   * Reads through a source file reconstructing lost blocks on the way.
-   * @param srcPath Path identifying the lost file.
-   * @throws IOException
-   * @return true if file was reconstructed, false if no reconstruction 
-   * was necessary or possible.
-   */
-  boolean processFile(Path srcPath, ParityFilePair parityPair,
-      Decoder decoder, Context context) throws IOException,
-      InterruptedException {
-    LOG.info("Processing file " + srcPath);
-    Progressable progress = context;
-    if (progress == null) {
-      progress = RaidUtils.NULL_PROGRESSABLE;
-    }
+	/**
+	 * Sorts source files ahead of parity files.
+	 */
+	void sortLostFiles(List<String> files) {
+		// TODO: We should first fix the files that lose more blocks
+		Comparator<String> comp = new Comparator<String>() {
+			public int compare(String p1, String p2) {
+				Codec c1 = null;
+				Codec c2 = null;
+				for (Codec codec : Codec.getCodecs()) {
+					if (isParityFile(p1, codec)) {
+						c1 = codec;
+					} else if (isParityFile(p2, codec)) {
+						c2 = codec;
+					}
+				}
+				if (c1 == null && c2 == null) {
+					return 0; // both are source files
+				}
+				if (c1 == null && c2 != null) {
+					return -1; // only p1 is a source file
+				}
+				if (c2 == null && c1 != null) {
+					return 1; // only p2 is a source file
+				}
+				return c2.priority - c1.priority; // descending order
+			}
+		};
+		Collections.sort(files, comp);
+	}
 
-    DistributedFileSystem srcFs = getDFS(srcPath);
-    FileStatus srcStat = srcFs.getFileStatus(srcPath);
-    long blockSize = srcStat.getBlockSize();
-    long srcFileSize = srcStat.getLen();
-    String uriPath = srcPath.toUri().getPath();
+	/**
+	 * Returns a DistributedFileSystem hosting the path supplied.
+	 */
+	protected DistributedFileSystem getDFS(Path p) throws IOException {
+		return (DistributedFileSystem) p.getFileSystem(getConf());
+	}
 
-    int numBlocksReconstructed = 0;
-    List<LocatedBlockWithMetaInfo> lostBlocks = lostBlocksInFile(srcFs, uriPath, srcStat);
-    if (lostBlocks.size() == 0) {
-      LOG.warn("Couldn't find any lost blocks in file " + srcPath + 
-          ", ignoring...");
-      return false;
-    }
-    for (LocatedBlockWithMetaInfo lb: lostBlocks) {
-      Block lostBlock = lb.getBlock();
-      long lostBlockOffset = lb.getStartOffset();
+	/**
+	 * Reads through a source file reconstructing lost blocks on the way.
+	 *
+	 * @param srcPath Path identifying the lost file.
+	 * @return true if file was reconstructed, false if no reconstruction
+	 * was necessary or possible.
+	 * @throws IOException
+	 */
+	boolean processFile(Path srcPath, ParityFilePair parityPair,
+						Decoder decoder, Context context) throws IOException,
+			InterruptedException {
+		LOG.info("Processing file " + srcPath);
+		Progressable progress = context;
+		if (progress == null) {
+			progress = RaidUtils.NULL_PROGRESSABLE;
+		}
 
-      LOG.info("Found lost block " + lostBlock +
-          ", offset " + lostBlockOffset);
+		DistributedFileSystem srcFs = getDFS(srcPath);
+		FileStatus srcStat = srcFs.getFileStatus(srcPath);
+		long blockSize = srcStat.getBlockSize();
+		long srcFileSize = srcStat.getLen();
+		String uriPath = srcPath.toUri().getPath();
 
-      final long blockContentsSize =
-        Math.min(blockSize, srcFileSize - lostBlockOffset);
-      File localBlockFile =
-        File.createTempFile(lostBlock.getBlockName(), ".tmp");
-      localBlockFile.deleteOnExit();
+		int numBlocksReconstructed = 0;
 
-      try {
-        decoder.recoverBlockToFile(srcFs, srcPath, parityPair.getFileSystem(),
-            parityPair.getPath(), blockSize,
-            lostBlockOffset, localBlockFile,
-            blockContentsSize, context);
+		// 定位文件中坏块信息
+		List<LocatedBlockWithMetaInfo> lostBlocks = lostBlocksInFile(srcFs, uriPath, srcStat);
+		if (lostBlocks.size() == 0) {
+			LOG.warn("Couldn't find any lost blocks in file " + srcPath +
+					", ignoring...");
+			return false;
+		}
+		for (LocatedBlockWithMetaInfo lb : lostBlocks) {
+			Block lostBlock = lb.getBlock();
+			long lostBlockOffset = lb.getStartOffset();
 
-        // Now that we have recovered the file block locally, send it.
-        String datanode = chooseDatanode(lb.getLocations());
-        computeMetadataAndSendReconstructedBlock(datanode, localBlockFile,
-            lostBlock, blockContentsSize,
-            lb.getDataProtocolVersion(), lb.getNamespaceID(), progress);
-        
-        numBlocksReconstructed++;
+			LOG.info("Found lost block " + lostBlock +
+					", offset " + lostBlockOffset);
 
-      } finally {
-        localBlockFile.delete();
-      }
-      progress.progress();
-    }
-    
-    LOG.info("Reconstructed " + numBlocksReconstructed + " blocks in " + srcPath);
-    return true;
-  }
+			final long blockContentsSize =
+					Math.min(blockSize, srcFileSize - lostBlockOffset);
+			File localBlockFile =
+					File.createTempFile(lostBlock.getBlockName(), ".tmp");
+			localBlockFile.deleteOnExit();
 
-  /**
-   * Reads through a parity file, reconstructing lost blocks on the way.
-   * This function uses the corresponding source file to regenerate parity
-   * file blocks.
-   * @return true if file was reconstructed, false if no reconstruction 
-   * was necessary or possible.
-   */
-  boolean processParityFile(Path parityPath, Decoder decoder, 
-      Context context)
-  throws IOException, InterruptedException {
-    LOG.info("Processing parity file " + parityPath);
-    
-    Progressable progress = context;
-    if (progress == null) {
-      progress = RaidUtils.NULL_PROGRESSABLE;
-    }
-    
-    Path srcPath = sourcePathFromParityPath(parityPath);
-    if (srcPath == null) {
-      LOG.warn("Could not get regular file corresponding to parity file " +  
-          parityPath + ", ignoring...");
-      return false;
-    }
+			try {
+				decoder.recoverBlockToFile(srcFs, srcPath, parityPair.getFileSystem(),
+						parityPair.getPath(), blockSize,
+						lostBlockOffset, localBlockFile,
+						blockContentsSize, context);
 
-    DistributedFileSystem parityFs = getDFS(parityPath);
-    DistributedFileSystem srcFs = getDFS(srcPath);
-    FileStatus parityStat = parityFs.getFileStatus(parityPath);
-    long blockSize = parityStat.getBlockSize();
-    FileStatus srcStat = srcFs.getFileStatus(srcPath);
+				// Now that we have recovered the file block locally, send it.
+				String datanode = chooseDatanode(lb.getLocations());
+				computeMetadataAndSendReconstructedBlock(datanode, localBlockFile,
+						lostBlock, blockContentsSize,
+						lb.getDataProtocolVersion(), lb.getNamespaceID(), progress);
 
-    // Check timestamp.
-    if (srcStat.getModificationTime() != parityStat.getModificationTime()) {
-      LOG.warn("Mismatching timestamp for " + srcPath + " and " + parityPath + 
-          ", ignoring...");
-      return false;
-    }
+				numBlocksReconstructed++;
 
-    String uriPath = parityPath.toUri().getPath();
-    int numBlocksReconstructed = 0;
-    List<LocatedBlockWithMetaInfo> lostBlocks = 
-      lostBlocksInFile(parityFs, uriPath, parityStat);
-    if (lostBlocks.size() == 0) {
-      LOG.warn("Couldn't find any lost blocks in parity file " + parityPath + 
-          ", ignoring...");
-      return false;
-    }
-    for (LocatedBlockWithMetaInfo lb: lostBlocks) {
-      Block lostBlock = lb.getBlock();
-      long lostBlockOffset = lb.getStartOffset();
+			} finally {
+				localBlockFile.delete();
+			}
+			progress.progress();
+		}
 
-      LOG.info("Found lost block " + lostBlock +
-          ", offset " + lostBlockOffset);
+		LOG.info("Reconstructed " + numBlocksReconstructed + " blocks in " + srcPath);
+		return true;
+	}
 
-      File localBlockFile =
-        File.createTempFile(lostBlock.getBlockName(), ".tmp");
-      localBlockFile.deleteOnExit();
+	/**
+	 * Reads through a parity file, reconstructing lost blocks on the way.
+	 * This function uses the corresponding source file to regenerate parity
+	 * file blocks.
+	 *
+	 * @return true if file was reconstructed, false if no reconstruction
+	 * was necessary or possible.
+	 */
+	boolean processParityFile(Path parityPath, Decoder decoder,
+							  Context context)
+			throws IOException, InterruptedException {
+		LOG.info("Processing parity file " + parityPath);
 
-      try {
-        decoder.recoverParityBlockToFile(srcFs, srcPath, parityFs, parityPath, 
-            blockSize, lostBlockOffset, localBlockFile, context);
-        
-        // Now that we have recovered the parity file block locally, send it.
-        String datanode = chooseDatanode(lb.getLocations());
-        computeMetadataAndSendReconstructedBlock(
-            datanode, localBlockFile, 
-            lostBlock, blockSize,
-            lb.getDataProtocolVersion(), lb.getNamespaceID(),
-            progress);
+		Progressable progress = context;
+		if (progress == null) {
+			progress = RaidUtils.NULL_PROGRESSABLE;
+		}
 
-        numBlocksReconstructed++;
-      } finally {
-        localBlockFile.delete();
-      }
-      progress.progress();
-    }
-    
-    LOG.info("Reconstructed " + numBlocksReconstructed + " blocks in " + parityPath);
-    return true;
-  }
+		Path srcPath = sourcePathFromParityPath(parityPath);
+		if (srcPath == null) {
+			LOG.warn("Could not get regular file corresponding to parity file " +
+					parityPath + ", ignoring...");
+			return false;
+		}
 
-  /**
-   * Reads through a parity HAR part file, reconstructing lost blocks on the way.
-   * A HAR block can contain many file blocks, as long as the HAR part file
-   * block size is a multiple of the file block size.
-   * @return true if file was reconstructed, false if no reconstruction 
-   * was necessary or possible.
-   */
-  boolean processParityHarPartFile(Path partFile,
-      Progressable progress)
-  throws IOException {
-    LOG.info("Processing parity HAR file " + partFile);
-    // Get some basic information.
-    DistributedFileSystem dfs = getDFS(partFile);
-    FileStatus partFileStat = dfs.getFileStatus(partFile);
-    long partFileBlockSize = partFileStat.getBlockSize();
-    LOG.info(partFile + " has block size " + partFileBlockSize);
+		DistributedFileSystem parityFs = getDFS(parityPath);
+		DistributedFileSystem srcFs = getDFS(srcPath);
+		FileStatus parityStat = parityFs.getFileStatus(parityPath);
+		long blockSize = parityStat.getBlockSize();
+		FileStatus srcStat = srcFs.getFileStatus(srcPath);
 
-    // Find the path to the index file.
-    // Parity file HARs are only one level deep, so the index files is at the
-    // same level as the part file.
-    // Parses through the HAR index file.
-    HarIndex harIndex = HarIndex.getHarIndex(dfs, partFile);
-    String uriPath = partFile.toUri().getPath();
-    int numBlocksReconstructed = 0;
-    List<LocatedBlockWithMetaInfo> lostBlocks = lostBlocksInFile(dfs, uriPath, 
-        partFileStat);
-    if (lostBlocks.size() == 0) {
-      LOG.warn("Couldn't find any lost blocks in HAR file " + partFile + 
-          ", ignoring...");
-      return false;
-    }
-    for (LocatedBlockWithMetaInfo lb: lostBlocks) {
-      Block lostBlock = lb.getBlock();
-      long lostBlockOffset = lb.getStartOffset();
+		// Check timestamp.
+		if (srcStat.getModificationTime() != parityStat.getModificationTime()) {
+			LOG.warn("Mismatching timestamp for " + srcPath + " and " + parityPath +
+					", ignoring...");
+			return false;
+		}
 
-      File localBlockFile =
-        File.createTempFile(lostBlock.getBlockName(), ".tmp");
-      localBlockFile.deleteOnExit();
+		String uriPath = parityPath.toUri().getPath();
+		int numBlocksReconstructed = 0;
+		List<LocatedBlockWithMetaInfo> lostBlocks =
+				lostBlocksInFile(parityFs, uriPath, parityStat);
+		if (lostBlocks.size() == 0) {
+			LOG.warn("Couldn't find any lost blocks in parity file " + parityPath +
+					", ignoring...");
+			return false;
+		}
+		for (LocatedBlockWithMetaInfo lb : lostBlocks) {
+			Block lostBlock = lb.getBlock();
+			long lostBlockOffset = lb.getStartOffset();
 
-      try {
-        processParityHarPartBlock(dfs, partFile, lostBlock, 
-            lostBlockOffset, partFileStat, harIndex,
-            localBlockFile, progress);
-        
-        // Now that we have recovered the part file block locally, send it.
-        String datanode = chooseDatanode(lb.getLocations());
-        computeMetadataAndSendReconstructedBlock(datanode, localBlockFile,
-            lostBlock, 
-            localBlockFile.length(),
-            lb.getDataProtocolVersion(), lb.getNamespaceID(),
-            progress);
-        
-        numBlocksReconstructed++;
-      } finally {
-        localBlockFile.delete();
-      }
-      progress.progress();
-    }
-    
-    LOG.info("Reconstructed " + numBlocksReconstructed + " blocks in " + partFile);
-    return true;
-  }
+			LOG.info("Found lost block " + lostBlock +
+					", offset " + lostBlockOffset);
 
-  /**
-   * This reconstructs a single part file block by recovering in sequence each
-   * parity block in the part file block.
-   */
-  private void processParityHarPartBlock(FileSystem dfs, Path partFile,
-      Block block, 
-      long blockOffset,
-      FileStatus partFileStat,
-      HarIndex harIndex,
-      File localBlockFile,
-      Progressable progress)
-  throws IOException {
-    String partName = partFile.toUri().getPath(); // Temporarily.
-    partName = partName.substring(1 + partName.lastIndexOf(Path.SEPARATOR));
+			File localBlockFile =
+					File.createTempFile(lostBlock.getBlockName(), ".tmp");
+			localBlockFile.deleteOnExit();
 
-    OutputStream out = new FileOutputStream(localBlockFile);
+			try {
+				decoder.recoverParityBlockToFile(srcFs, srcPath, parityFs, parityPath,
+						blockSize, lostBlockOffset, localBlockFile, context);
 
-    try {
-      // A HAR part file block could map to several parity files. We need to
-      // use all of them to recover this block.
-      final long blockEnd = Math.min(blockOffset + 
-          partFileStat.getBlockSize(),
-          partFileStat.getLen());
-      for (long offset = blockOffset; offset < blockEnd; ) {
-        HarIndex.IndexEntry entry = harIndex.findEntry(partName, offset);
-        if (entry == null) {
-          String msg = "Lost index file has no matching index entry for " +
-          partName + ":" + offset;
-          LOG.warn(msg);
-          throw new IOException(msg);
-        }
-        Path parityFile = new Path(entry.fileName);
-        Encoder encoder = null;
-        for (Codec codec : Codec.getCodecs()) {
-          if (isParityFile(parityFile, codec)) {
-            encoder = new Encoder(getConf(), codec);
-          }
-        }
-        if (encoder == null) {
-          String msg = "Could not figure out codec correctly for " + parityFile;
-          LOG.warn(msg);
-          throw new IOException(msg);
-        }
-        Path srcFile = sourcePathFromParityPath(parityFile);
-        FileStatus srcStat = dfs.getFileStatus(srcFile);
-        if (srcStat.getModificationTime() != entry.mtime) {
-          String msg = "Modification times of " + parityFile + " and " +
-          srcFile + " do not match.";
-          LOG.warn(msg);
-          throw new IOException(msg);
-        }
-        long lostOffsetInParity = offset - entry.startOffset;
-        LOG.info(partFile + ":" + offset + " maps to " +
-            parityFile + ":" + lostOffsetInParity +
-            " and will be recovered from " + srcFile);
-        encoder.recoverParityBlockToStream(dfs, srcStat,
-            srcStat.getBlockSize(), parityFile,
-            lostOffsetInParity, out, progress);
-        // Finished recovery of one parity block. Since a parity block has the
-        // same size as a source block, we can move offset by source block 
-        // size.
-        offset += srcStat.getBlockSize();
-        LOG.info("Recovered " + srcStat.getBlockSize() + " part file bytes ");
-        if (offset > blockEnd) {
-          String msg =
-            "Recovered block spills across part file blocks. Cannot continue";
-          throw new IOException(msg);
-        }
-        progress.progress();
-      }
-    } finally {
-      out.close();
-    }
-  }
+				// Now that we have recovered the parity file block locally, send it.
+				String datanode = chooseDatanode(lb.getLocations());
+				computeMetadataAndSendReconstructedBlock(
+						datanode, localBlockFile,
+						lostBlock, blockSize,
+						lb.getDataProtocolVersion(), lb.getNamespaceID(),
+						progress);
 
-  /**
-   * Choose a datanode (hostname:portnumber). The datanode is chosen at
-   * random from the live datanodes.
-   * @param locationsToAvoid locations to avoid.
-   * @return A string in the format name:port.
-   * @throws IOException
-   */
-  private String chooseDatanode(DatanodeInfo[] locationsToAvoid)
-  throws IOException {
-    DistributedFileSystem dfs = getDFS(new Path("/"));
-    DatanodeInfo[] live =
-      dfs.getClient().datanodeReport(DatanodeReportType.LIVE);
-    LOG.info("Choosing a datanode from " + live.length +
-        " live nodes while avoiding " + locationsToAvoid.length);
-    Random rand = new Random();
-    String chosen = null;
-    int maxAttempts = 1000;
-    for (int i = 0; i < maxAttempts && chosen == null; i++) {
-      int idx = rand.nextInt(live.length);
-      chosen = live[idx].name;
-      for (DatanodeInfo avoid: locationsToAvoid) {
-        if (chosen.equals(avoid.name)) {
-          LOG.info("Avoiding " + avoid.name);
-          chosen = null;
-          break;
-        }
-      }
-    }
-    if (chosen == null) {
-      throw new IOException("Could not choose datanode");
-    }
-    LOG.info("Choosing datanode " + chosen);
-    return chosen;
-  }
+				numBlocksReconstructed++;
+			} finally {
+				localBlockFile.delete();
+			}
+			progress.progress();
+		}
 
-  /**
-   * Reads data from the data stream provided and computes metadata.
-   */
-  DataInputStream computeMetadata(Configuration conf, InputStream dataStream)
-  throws IOException {
-    ByteArrayOutputStream mdOutBase = new ByteArrayOutputStream(1024*1024);
-    DataOutputStream mdOut = new DataOutputStream(mdOutBase);
+		LOG.info("Reconstructed " + numBlocksReconstructed + " blocks in " + parityPath);
+		return true;
+	}
 
-    // First, write out the version.
-    mdOut.writeShort(FSDataset.METADATA_VERSION);
+	/**
+	 * Reads through a parity HAR part file, reconstructing lost blocks on the way.
+	 * A HAR block can contain many file blocks, as long as the HAR part file
+	 * block size is a multiple of the file block size.
+	 *
+	 * @return true if file was reconstructed, false if no reconstruction
+	 * was necessary or possible.
+	 */
+	boolean processParityHarPartFile(Path partFile,
+									 Progressable progress)
+			throws IOException {
+		LOG.info("Processing parity HAR file " + partFile);
+		// Get some basic information.
+		DistributedFileSystem dfs = getDFS(partFile);
+		FileStatus partFileStat = dfs.getFileStatus(partFile);
+		long partFileBlockSize = partFileStat.getBlockSize();
+		LOG.info(partFile + " has block size " + partFileBlockSize);
 
-    // Create a summer and write out its header.
-    int bytesPerChecksum = conf.getInt("io.bytes.per.checksum", 512);
-    DataChecksum sum =
-      DataChecksum.newDataChecksum(DataChecksum.CHECKSUM_CRC32,
-          bytesPerChecksum);
-    sum.writeHeader(mdOut);
+		// Find the path to the index file.
+		// Parity file HARs are only one level deep, so the index files is at the
+		// same level as the part file.
+		// Parses through the HAR index file.
+		HarIndex harIndex = HarIndex.getHarIndex(dfs, partFile);
+		String uriPath = partFile.toUri().getPath();
+		int numBlocksReconstructed = 0;
+		List<LocatedBlockWithMetaInfo> lostBlocks = lostBlocksInFile(dfs, uriPath,
+				partFileStat);
+		if (lostBlocks.size() == 0) {
+			LOG.warn("Couldn't find any lost blocks in HAR file " + partFile +
+					", ignoring...");
+			return false;
+		}
+		for (LocatedBlockWithMetaInfo lb : lostBlocks) {
+			Block lostBlock = lb.getBlock();
+			long lostBlockOffset = lb.getStartOffset();
 
-    // Buffer to read in a chunk of data.
-    byte[] buf = new byte[bytesPerChecksum];
-    // Buffer to store the checksum bytes.
-    byte[] chk = new byte[sum.getChecksumSize()];
+			File localBlockFile =
+					File.createTempFile(lostBlock.getBlockName(), ".tmp");
+			localBlockFile.deleteOnExit();
 
-    // Read data till we reach the end of the input stream.
-    int bytesSinceFlush = 0;
-    while (true) {
-      // Read some bytes.
-      int bytesRead = dataStream.read(buf, bytesSinceFlush, 
-          bytesPerChecksum - bytesSinceFlush);
-      if (bytesRead == -1) {
-        if (bytesSinceFlush > 0) {
-          boolean reset = true;
-          sum.writeValue(chk, 0, reset); // This also resets the sum.
-          // Write the checksum to the stream.
-          mdOut.write(chk, 0, chk.length);
-          bytesSinceFlush = 0;
-        }
-        break;
-      }
-      // Update the checksum.
-      sum.update(buf, bytesSinceFlush, bytesRead);
-      bytesSinceFlush += bytesRead;
+			try {
+				processParityHarPartBlock(dfs, partFile, lostBlock,
+						lostBlockOffset, partFileStat, harIndex,
+						localBlockFile, progress);
 
-      // Flush the checksum if necessary.
-      if (bytesSinceFlush == bytesPerChecksum) {
-        boolean reset = true;
-        sum.writeValue(chk, 0, reset); // This also resets the sum.
-        // Write the checksum to the stream.
-        mdOut.write(chk, 0, chk.length);
-        bytesSinceFlush = 0;
-      }
-    }
+				// Now that we have recovered the part file block locally, send it.
+				String datanode = chooseDatanode(lb.getLocations());
+				computeMetadataAndSendReconstructedBlock(datanode, localBlockFile,
+						lostBlock,
+						localBlockFile.length(),
+						lb.getDataProtocolVersion(), lb.getNamespaceID(),
+						progress);
 
-    byte[] mdBytes = mdOutBase.toByteArray();
-    return new DataInputStream(new ByteArrayInputStream(mdBytes));
-  }
+				numBlocksReconstructed++;
+			} finally {
+				localBlockFile.delete();
+			}
+			progress.progress();
+		}
 
-  private void computeMetadataAndSendReconstructedBlock(String datanode,
-      File localBlockFile,
-      Block block, long blockSize,
-      int dataTransferVersion,
-      int namespaceId,
-      Progressable progress)
-  throws IOException {
+		LOG.info("Reconstructed " + numBlocksReconstructed + " blocks in " + partFile);
+		return true;
+	}
 
-    LOG.info("Computing metdata");
-    InputStream blockContents = null;
-    DataInputStream blockMetadata = null;
-    try {
-      blockContents = new FileInputStream(localBlockFile);
-      blockMetadata = computeMetadata(getConf(), blockContents);
-      blockContents.close();
-      progress.progress();
-      // Reopen
-      blockContents = new FileInputStream(localBlockFile);
-      sendReconstructedBlock(datanode, blockContents, blockMetadata, block, 
-          blockSize, dataTransferVersion, namespaceId, progress);
-    } finally {
-      if (blockContents != null) {
-        blockContents.close();
-        blockContents = null;
-      }
-      if (blockMetadata != null) {
-        blockMetadata.close();
-        blockMetadata = null;
-      }
-    }
-  }
+	/**
+	 * This reconstructs a single part file block by recovering in sequence each
+	 * parity block in the part file block.
+	 */
+	private void processParityHarPartBlock(FileSystem dfs, Path partFile,
+										   Block block,
+										   long blockOffset,
+										   FileStatus partFileStat,
+										   HarIndex harIndex,
+										   File localBlockFile,
+										   Progressable progress)
+			throws IOException {
+		String partName = partFile.toUri().getPath(); // Temporarily.
+		partName = partName.substring(1 + partName.lastIndexOf(Path.SEPARATOR));
 
-  /**
-   * Send a generated block to a datanode.
-   * @param datanode Chosen datanode name in host:port form.
-   * @param blockContents Stream with the block contents.
-   * @param block Block object identifying the block to be sent.
-   * @param blockSize size of the block.
-   * @param dataTransferVersion the data transfer version
-   * @param namespaceId namespace id the block belongs to
-   * @throws IOException
-   */
-  private void sendReconstructedBlock(String datanode,
-      final InputStream blockContents,
-      DataInputStream metadataIn,
-      Block block, long blockSize,
-      int dataTransferVersion, int namespaceId,
-      Progressable progress) 
-  throws IOException {
-    InetSocketAddress target = NetUtils.createSocketAddr(datanode);
-    Socket sock = SocketChannel.open().socket();
+		OutputStream out = new FileOutputStream(localBlockFile);
 
-    int readTimeout =
-      getConf().getInt(BlockIntegrityMonitor.BLOCKFIX_READ_TIMEOUT, 
-          HdfsConstants.READ_TIMEOUT);
-    NetUtils.connect(sock, target, readTimeout);
-    sock.setSoTimeout(readTimeout);
+		try {
+			// A HAR part file block could map to several parity files. We need to
+			// use all of them to recover this block.
+			final long blockEnd = Math.min(blockOffset +
+							partFileStat.getBlockSize(),
+					partFileStat.getLen());
+			for (long offset = blockOffset; offset < blockEnd; ) {
+				HarIndex.IndexEntry entry = harIndex.findEntry(partName, offset);
+				if (entry == null) {
+					String msg = "Lost index file has no matching index entry for " +
+							partName + ":" + offset;
+					LOG.warn(msg);
+					throw new IOException(msg);
+				}
+				Path parityFile = new Path(entry.fileName);
+				Encoder encoder = null;
+				for (Codec codec : Codec.getCodecs()) {
+					if (isParityFile(parityFile, codec)) {
+						encoder = new Encoder(getConf(), codec);
+					}
+				}
+				if (encoder == null) {
+					String msg = "Could not figure out codec correctly for " + parityFile;
+					LOG.warn(msg);
+					throw new IOException(msg);
+				}
+				Path srcFile = sourcePathFromParityPath(parityFile);
+				FileStatus srcStat = dfs.getFileStatus(srcFile);
+				if (srcStat.getModificationTime() != entry.mtime) {
+					String msg = "Modification times of " + parityFile + " and " +
+							srcFile + " do not match.";
+					LOG.warn(msg);
+					throw new IOException(msg);
+				}
+				long lostOffsetInParity = offset - entry.startOffset;
+				LOG.info(partFile + ":" + offset + " maps to " +
+						parityFile + ":" + lostOffsetInParity +
+						" and will be recovered from " + srcFile);
+				encoder.recoverParityBlockToStream(dfs, srcStat,
+						srcStat.getBlockSize(), parityFile,
+						lostOffsetInParity, out, progress);
+				// Finished recovery of one parity block. Since a parity block has the
+				// same size as a source block, we can move offset by source block
+				// size.
+				offset += srcStat.getBlockSize();
+				LOG.info("Recovered " + srcStat.getBlockSize() + " part file bytes ");
+				if (offset > blockEnd) {
+					String msg =
+							"Recovered block spills across part file blocks. Cannot continue";
+					throw new IOException(msg);
+				}
+				progress.progress();
+			}
+		} finally {
+			out.close();
+		}
+	}
 
-    int writeTimeout = getConf().getInt(BlockIntegrityMonitor.BLOCKFIX_WRITE_TIMEOUT,
-        HdfsConstants.WRITE_TIMEOUT);
+	/**
+	 * Choose a datanode (hostname:portnumber). The datanode is chosen at
+	 * random from the live datanodes.
+	 *
+	 * @param locationsToAvoid locations to avoid.
+	 * @return A string in the format name:port.
+	 * @throws IOException
+	 */
+	private String chooseDatanode(DatanodeInfo[] locationsToAvoid)
+			throws IOException {
+		DistributedFileSystem dfs = getDFS(new Path("/"));
+		DatanodeInfo[] live =
+				dfs.getClient().datanodeReport(DatanodeReportType.LIVE);
+		LOG.info("Choosing a datanode from " + live.length +
+				" live nodes while avoiding " + locationsToAvoid.length);
+		Random rand = new Random();
+		String chosen = null;
+		int maxAttempts = 1000;
+		for (int i = 0; i < maxAttempts && chosen == null; i++) {
+			int idx = rand.nextInt(live.length);
+			chosen = live[idx].name;
+			for (DatanodeInfo avoid : locationsToAvoid) {
+				if (chosen.equals(avoid.name)) {
+					LOG.info("Avoiding " + avoid.name);
+					chosen = null;
+					break;
+				}
+			}
+		}
+		if (chosen == null) {
+			throw new IOException("Could not choose datanode");
+		}
+		LOG.info("Choosing datanode " + chosen);
+		return chosen;
+	}
 
-    OutputStream baseStream = NetUtils.getOutputStream(sock, writeTimeout);
-    DataOutputStream out =
-      new DataOutputStream(new BufferedOutputStream(baseStream, 
-          FSConstants.
-          SMALL_BUFFER_SIZE));
+	/**
+	 * Reads data from the data stream provided and computes metadata.
+	 */
+	DataInputStream computeMetadata(Configuration conf, InputStream dataStream)
+			throws IOException {
+		ByteArrayOutputStream mdOutBase = new ByteArrayOutputStream(1024 * 1024);
+		DataOutputStream mdOut = new DataOutputStream(mdOutBase);
 
-    boolean corruptChecksumOk = false;
-    boolean chunkOffsetOK = false;
-    boolean verifyChecksum = true;
-    boolean transferToAllowed = false;
+		// First, write out the version.
+		mdOut.writeShort(FSDataset.METADATA_VERSION);
 
-    try {
-      LOG.info("Sending block " + block +
-          " from " + sock.getLocalSocketAddress().toString() +
-          " to " + sock.getRemoteSocketAddress().toString());
-      BlockSender blockSender = 
-        new BlockSender(namespaceId, block, blockSize, 0, blockSize,
-            corruptChecksumOk, chunkOffsetOK, verifyChecksum,
-            transferToAllowed,
-            metadataIn, new BlockSender.InputStreamFactory() {
-          @Override
-          public InputStream createStream(long offset) 
-          throws IOException {
-            // we are passing 0 as the offset above,
-            // so we can safely ignore
-            // the offset passed
-            return blockContents;
-          }
-        });
+		// Create a summer and write out its header.
+		int bytesPerChecksum = conf.getInt("io.bytes.per.checksum", 512);
+		DataChecksum sum =
+				DataChecksum.newDataChecksum(DataChecksum.CHECKSUM_CRC32,
+						bytesPerChecksum);
+		sum.writeHeader(mdOut);
 
-      // Header info
-      out.writeShort(dataTransferVersion);
-      out.writeByte(DataTransferProtocol.OP_WRITE_BLOCK);
-      if (dataTransferVersion >= DataTransferProtocol.FEDERATION_VERSION) {
-        out.writeInt(namespaceId);
-      }
-      out.writeLong(block.getBlockId());
-      out.writeLong(block.getGenerationStamp());
-      out.writeInt(0);           // no pipelining
-      out.writeBoolean(false);   // not part of recovery
-      Text.writeString(out, ""); // client
-      out.writeBoolean(true); // sending src node information
-      DatanodeInfo srcNode = new DatanodeInfo();
-      srcNode.write(out); // Write src node DatanodeInfo
-      // write targets
-      out.writeInt(0); // num targets
-      // send data & checksum
-      blockSender.sendBlock(out, baseStream, null, progress);
+		// Buffer to read in a chunk of data.
+		byte[] buf = new byte[bytesPerChecksum];
+		// Buffer to store the checksum bytes.
+		byte[] chk = new byte[sum.getChecksumSize()];
 
-      LOG.info("Sent block " + block + " to " + datanode);
-    } finally {
-      sock.close();
-      out.close();
-    }
-  }
+		// Read data till we reach the end of the input stream.
+		int bytesSinceFlush = 0;
+		while (true) {
+			// Read some bytes.
+			int bytesRead = dataStream.read(buf, bytesSinceFlush,
+					bytesPerChecksum - bytesSinceFlush);
+			if (bytesRead == -1) {
+				if (bytesSinceFlush > 0) {
+					boolean reset = true;
+					sum.writeValue(chk, 0, reset); // This also resets the sum.
+					// Write the checksum to the stream.
+					mdOut.write(chk, 0, chk.length);
+					bytesSinceFlush = 0;
+				}
+				break;
+			}
+			// Update the checksum.
+			sum.update(buf, bytesSinceFlush, bytesRead);
+			bytesSinceFlush += bytesRead;
 
-  /**
-   * returns the source file corresponding to a parity file
-   */
-  Path sourcePathFromParityPath(Path parityPath) {
-    String parityPathStr = parityPath.toUri().getPath();
-    for (Codec codec : Codec.getCodecs()) {
-      String prefix = codec.getParityPrefix();
-      if (parityPathStr.startsWith(prefix)) {
-        // Remove the prefix to get the source file.
-        String src = parityPathStr.replaceFirst(prefix, "/");
-        return new Path(src);
-      }
-    }
-    return null;
-  }
+			// Flush the checksum if necessary.
+			if (bytesSinceFlush == bytesPerChecksum) {
+				boolean reset = true;
+				sum.writeValue(chk, 0, reset); // This also resets the sum.
+				// Write the checksum to the stream.
+				mdOut.write(chk, 0, chk.length);
+				bytesSinceFlush = 0;
+			}
+		}
 
-  /**
-   * Returns the lost blocks in a file.
-   */
-  abstract List<LocatedBlockWithMetaInfo> lostBlocksInFile(
-      DistributedFileSystem fs,
-      String uriPath, FileStatus stat)
-      throws IOException;
+		byte[] mdBytes = mdOutBase.toByteArray();
+		return new DataInputStream(new ByteArrayInputStream(mdBytes));
+	}
 
-  
-  /**
-   * This class implements corrupt block fixing functionality.
-   */
-  public static class CorruptBlockReconstructor extends BlockReconstructor {
-    
-    public CorruptBlockReconstructor(Configuration conf) throws IOException {
-      super(conf);
-    }
+	private void computeMetadataAndSendReconstructedBlock(String datanode,
+														  File localBlockFile,
+														  Block block, long blockSize,
+														  int dataTransferVersion,
+														  int namespaceId,
+														  Progressable progress)
+			throws IOException {
 
-    
-    List<LocatedBlockWithMetaInfo> lostBlocksInFile(DistributedFileSystem fs,
-                                        String uriPath, 
-                                        FileStatus stat)
-        throws IOException {
-      
-      List<LocatedBlockWithMetaInfo> corrupt =
-        new LinkedList<LocatedBlockWithMetaInfo>();
-      VersionedLocatedBlocks locatedBlocks;
-      int namespaceId = 0;
-      int methodFingerprint = 0;
-      if (DFSClient.isMetaInfoSuppoted(fs.getClient().namenodeProtocolProxy)) {
-        LocatedBlocksWithMetaInfo lbksm = fs.getClient().namenode.
-                  openAndFetchMetaInfo(uriPath, 0, stat.getLen());
-        namespaceId = lbksm.getNamespaceID();
-        locatedBlocks = lbksm;
-        methodFingerprint = lbksm.getMethodFingerPrint();
-        fs.getClient().getNewNameNodeIfNeeded(methodFingerprint);
-      } else {
-        locatedBlocks = fs.getClient().namenode.open(uriPath, 0, stat.getLen());
-      }
-      final int dataTransferVersion = locatedBlocks.getDataProtocolVersion();
-      for (LocatedBlock b: locatedBlocks.getLocatedBlocks()) {
-        if (b.isCorrupt() ||
-            (b.getLocations().length == 0 && b.getBlockSize() > 0)) {
-          corrupt.add(new LocatedBlockWithMetaInfo(b.getBlock(),
-              b.getLocations(), b.getStartOffset(),
-              dataTransferVersion, namespaceId, methodFingerprint));
-        }
-      }
-      return corrupt;
-    }
-  }
-  
-  /**
-   * This class implements decommissioning block copying functionality.
-   */
-  public static class DecommissioningBlockReconstructor extends BlockReconstructor {
+		LOG.info("Computing metdata");
+		InputStream blockContents = null;
+		DataInputStream blockMetadata = null;
+		try {
+			blockContents = new FileInputStream(localBlockFile);
+			blockMetadata = computeMetadata(getConf(), blockContents);
+			blockContents.close();
+			progress.progress();
+			// Reopen
+			blockContents = new FileInputStream(localBlockFile);
+			sendReconstructedBlock(datanode, blockContents, blockMetadata, block,
+					blockSize, dataTransferVersion, namespaceId, progress);
+		} finally {
+			if (blockContents != null) {
+				blockContents.close();
+				blockContents = null;
+			}
+			if (blockMetadata != null) {
+				blockMetadata.close();
+				blockMetadata = null;
+			}
+		}
+	}
 
-    public DecommissioningBlockReconstructor(Configuration conf) throws IOException {
-      super(conf);
-    }
+	/**
+	 * Send a generated block to a datanode.
+	 *
+	 * @param datanode            Chosen datanode name in host:port form.
+	 * @param blockContents       Stream with the block contents.
+	 * @param block               Block object identifying the block to be sent.
+	 * @param blockSize           size of the block.
+	 * @param dataTransferVersion the data transfer version
+	 * @param namespaceId         namespace id the block belongs to
+	 * @throws IOException
+	 */
+	private void sendReconstructedBlock(String datanode,
+										final InputStream blockContents,
+										DataInputStream metadataIn,
+										Block block, long blockSize,
+										int dataTransferVersion, int namespaceId,
+										Progressable progress)
+			throws IOException {
+		InetSocketAddress target = NetUtils.createSocketAddr(datanode);
+		Socket sock = SocketChannel.open().socket();
 
-    List<LocatedBlockWithMetaInfo> lostBlocksInFile(DistributedFileSystem fs,
-                                           String uriPath,
-                                           FileStatus stat)
-        throws IOException {
+		int readTimeout =
+				getConf().getInt(BlockIntegrityMonitor.BLOCKFIX_READ_TIMEOUT,
+						HdfsConstants.READ_TIMEOUT);
+		NetUtils.connect(sock, target, readTimeout);
+		sock.setSoTimeout(readTimeout);
 
-      List<LocatedBlockWithMetaInfo> decommissioning = 
-        new LinkedList<LocatedBlockWithMetaInfo>();
-      VersionedLocatedBlocks locatedBlocks;
-      int namespaceId = 0;
-      int methodFingerprint = 0;
-      if (DFSClient.isMetaInfoSuppoted(fs.getClient().namenodeProtocolProxy)) {
-        LocatedBlocksWithMetaInfo lbksm = fs.getClient().namenode.
-                  openAndFetchMetaInfo(uriPath, 0, stat.getLen());
-        namespaceId = lbksm.getNamespaceID();
-        locatedBlocks = lbksm;
-        methodFingerprint = lbksm.getMethodFingerPrint();
-        fs.getClient().getNewNameNodeIfNeeded(methodFingerprint);
-      } else {
-        locatedBlocks = fs.getClient().namenode.open(uriPath, 0, stat.getLen());
-      }
-      final int dataTransferVersion = locatedBlocks.getDataProtocolVersion();
+		int writeTimeout = getConf().getInt(BlockIntegrityMonitor.BLOCKFIX_WRITE_TIMEOUT,
+				HdfsConstants.WRITE_TIMEOUT);
+
+		OutputStream baseStream = NetUtils.getOutputStream(sock, writeTimeout);
+		DataOutputStream out =
+				new DataOutputStream(new BufferedOutputStream(baseStream,
+						FSConstants.
+								SMALL_BUFFER_SIZE));
+
+		boolean corruptChecksumOk = false;
+		boolean chunkOffsetOK = false;
+		boolean verifyChecksum = true;
+		boolean transferToAllowed = false;
+
+		try {
+			LOG.info("Sending block " + block +
+					" from " + sock.getLocalSocketAddress().toString() +
+					" to " + sock.getRemoteSocketAddress().toString());
+			BlockSender blockSender =
+					new BlockSender(namespaceId, block, blockSize, 0, blockSize,
+							corruptChecksumOk, chunkOffsetOK, verifyChecksum,
+							transferToAllowed,
+							metadataIn, new BlockSender.InputStreamFactory() {
+						@Override
+						public InputStream createStream(long offset)
+								throws IOException {
+							// we are passing 0 as the offset above,
+							// so we can safely ignore
+							// the offset passed
+							return blockContents;
+						}
+					});
+
+			// Header info
+			out.writeShort(dataTransferVersion);
+			out.writeByte(DataTransferProtocol.OP_WRITE_BLOCK);
+			if (dataTransferVersion >= DataTransferProtocol.FEDERATION_VERSION) {
+				out.writeInt(namespaceId);
+			}
+			out.writeLong(block.getBlockId());
+			out.writeLong(block.getGenerationStamp());
+			out.writeInt(0);           // no pipelining
+			out.writeBoolean(false);   // not part of recovery
+			Text.writeString(out, ""); // client
+			out.writeBoolean(true); // sending src node information
+			DatanodeInfo srcNode = new DatanodeInfo();
+			srcNode.write(out); // Write src node DatanodeInfo
+			// write targets
+			out.writeInt(0); // num targets
+			// send data & checksum
+			blockSender.sendBlock(out, baseStream, null, progress);
+
+			LOG.info("Sent block " + block + " to " + datanode);
+		} finally {
+			sock.close();
+			out.close();
+		}
+	}
+
+	/**
+	 * returns the source file corresponding to a parity file
+	 */
+	Path sourcePathFromParityPath(Path parityPath) {
+		String parityPathStr = parityPath.toUri().getPath();
+		for (Codec codec : Codec.getCodecs()) {
+			String prefix = codec.getParityPrefix();
+			if (parityPathStr.startsWith(prefix)) {
+				// Remove the prefix to get the source file.
+				String src = parityPathStr.replaceFirst(prefix, "/");
+				return new Path(src);
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Returns the lost blocks in a file.
+	 */
+	abstract List<LocatedBlockWithMetaInfo> lostBlocksInFile(
+			DistributedFileSystem fs,
+			String uriPath, FileStatus stat)
+			throws IOException;
 
 
-      for (LocatedBlock b : locatedBlocks.getLocatedBlocks()) {
-        if (b.isCorrupt() ||
-            (b.getLocations().length == 0 && b.getBlockSize() > 0)) {
-          // If corrupt, this block is the responsibility of the CorruptBlockReconstructor
-          continue;
-        }
+	/**
+	 * This class implements corrupt block fixing functionality.
+	 */
+	public static class CorruptBlockReconstructor extends BlockReconstructor {
 
-        // Copy this block iff all good copies are being decommissioned
-        boolean allDecommissioning = true;
-        for (DatanodeInfo i : b.getLocations()) {
-          allDecommissioning &= i.isDecommissionInProgress();
-        }
-        if (allDecommissioning) {
-          decommissioning.add(new LocatedBlockWithMetaInfo(b.getBlock(),
-              b.getLocations(), b.getStartOffset(),
-              dataTransferVersion, namespaceId, methodFingerprint));
-        }
-      }
-      return decommissioning;
-    }
+		public CorruptBlockReconstructor(Configuration conf) throws IOException {
+			super(conf);
+		}
 
-  }
+
+		List<LocatedBlockWithMetaInfo> lostBlocksInFile(DistributedFileSystem fs,
+														String uriPath,
+														FileStatus stat)
+				throws IOException {
+
+			List<LocatedBlockWithMetaInfo> corrupt =
+					new LinkedList<LocatedBlockWithMetaInfo>();
+			VersionedLocatedBlocks locatedBlocks;
+			int namespaceId = 0;
+			int methodFingerprint = 0;
+			if (DFSClient.isMetaInfoSuppoted(fs.getClient().namenodeProtocolProxy)) {
+				LocatedBlocksWithMetaInfo lbksm = fs.getClient().namenode.
+						openAndFetchMetaInfo(uriPath, 0, stat.getLen());
+				namespaceId = lbksm.getNamespaceID();
+				locatedBlocks = lbksm;
+				methodFingerprint = lbksm.getMethodFingerPrint();
+				fs.getClient().getNewNameNodeIfNeeded(methodFingerprint);
+			} else {
+				locatedBlocks = fs.getClient().namenode.open(uriPath, 0, stat.getLen());
+			}
+			final int dataTransferVersion = locatedBlocks.getDataProtocolVersion();
+			for (LocatedBlock b : locatedBlocks.getLocatedBlocks()) {
+				if (b.isCorrupt() ||
+						(b.getLocations().length == 0 && b.getBlockSize() > 0)) {
+					corrupt.add(new LocatedBlockWithMetaInfo(b.getBlock(),
+							b.getLocations(), b.getStartOffset(),
+							dataTransferVersion, namespaceId, methodFingerprint));
+				}
+			}
+			return corrupt;
+		}
+	}
+
+	/**
+	 * This class implements decommissioning block copying functionality.
+	 */
+	public static class DecommissioningBlockReconstructor extends BlockReconstructor {
+
+		public DecommissioningBlockReconstructor(Configuration conf) throws IOException {
+			super(conf);
+		}
+
+		List<LocatedBlockWithMetaInfo> lostBlocksInFile(DistributedFileSystem fs,
+														String uriPath,
+														FileStatus stat)
+				throws IOException {
+
+			List<LocatedBlockWithMetaInfo> decommissioning =
+					new LinkedList<LocatedBlockWithMetaInfo>();
+			VersionedLocatedBlocks locatedBlocks;
+			int namespaceId = 0;
+			int methodFingerprint = 0;
+			if (DFSClient.isMetaInfoSuppoted(fs.getClient().namenodeProtocolProxy)) {
+				LocatedBlocksWithMetaInfo lbksm = fs.getClient().namenode.
+						openAndFetchMetaInfo(uriPath, 0, stat.getLen());
+				namespaceId = lbksm.getNamespaceID();
+				locatedBlocks = lbksm;
+				methodFingerprint = lbksm.getMethodFingerPrint();
+				fs.getClient().getNewNameNodeIfNeeded(methodFingerprint);
+			} else {
+				locatedBlocks = fs.getClient().namenode.open(uriPath, 0, stat.getLen());
+			}
+			final int dataTransferVersion = locatedBlocks.getDataProtocolVersion();
+
+
+			for (LocatedBlock b : locatedBlocks.getLocatedBlocks()) {
+				if (b.isCorrupt() ||
+						(b.getLocations().length == 0 && b.getBlockSize() > 0)) {
+					// If corrupt, this block is the responsibility of the CorruptBlockReconstructor
+					continue;
+				}
+
+				// Copy this block iff all good copies are being decommissioned
+				boolean allDecommissioning = true;
+				for (DatanodeInfo i : b.getLocations()) {
+					allDecommissioning &= i.isDecommissionInProgress();
+				}
+				if (allDecommissioning) {
+					decommissioning.add(new LocatedBlockWithMetaInfo(b.getBlock(),
+							b.getLocations(), b.getStartOffset(),
+							dataTransferVersion, namespaceId, methodFingerprint));
+				}
+			}
+			return decommissioning;
+		}
+
+	}
 
 
 }

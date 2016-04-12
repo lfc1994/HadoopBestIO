@@ -332,6 +332,7 @@ public class Encoder {
     long blockSize,
     OutputStream[] outs,
     Progressable reporter) throws IOException {
+
     configureBuffers(blockSize);
     int boundedBufferCapacity = 1;
     ParallelStreamReader parallelReader = new ParallelStreamReader(
