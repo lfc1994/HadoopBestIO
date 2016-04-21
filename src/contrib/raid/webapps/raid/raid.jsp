@@ -20,7 +20,11 @@
   PlacementMonitor place = raidNode.getPlacementMonitor();
   DiskStatus ds = new DFSClient(raidNode.getConf()).getNSDiskStatus();
   String name = raidNode.getHostName();
-  name = name.substring(0, name.indexOf(".")).toUpperCase();
+  try{
+    name = name.substring(0, name.indexOf(".")).toUpperCase();
+  }catch(Exception e){
+    name="hostname";
+  }
 %>
 <%!
   private String td(String s) {

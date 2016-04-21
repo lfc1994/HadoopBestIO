@@ -99,6 +99,10 @@ public class ParallelStreamReader {
   BlockingQueue<ReadResult> boundedBuffer;
   Thread mainThread;
 
+  // Used by subClass Only!!
+  protected ParallelStreamReader(){
+
+  }
   /**
    * Reads data from multiple streams in parallel and puts the data in a queue.
    * @param streams The input streams to read from.
@@ -106,7 +110,7 @@ public class ParallelStreamReader {
    * @param numThreads Number of threads to use for parallelism.
    * @param boundedBuffer The queue to place the results in.
    */
-  
+
   public ParallelStreamReader(
       Progressable reporter,
       InputStream[] streams,
@@ -203,6 +207,7 @@ public class ParallelStreamReader {
    */
   private void performReads(ReadResult readResult) throws InterruptedException {
     long start = System.currentTimeMillis();
+    // 为每一个输入流创建一个ReadOperation线程读取数据
     for (int i = 0; i < streams.length; ) {
       boolean acquired = slots.tryAcquire(1, 10, TimeUnit.SECONDS);
       reporter.progress();

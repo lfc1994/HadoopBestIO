@@ -109,6 +109,8 @@ abstract class BlockReconstructor extends Configured {
 				Decoder decoder = null;
 				if(codec.id.equals("rs_local")){
 					decoder = new LocalRSDecoder(getConf());
+				}else if(codec.id.equals("best_io")){
+					decoder = new BestIODecoder(getConf());
 				}
 				else decoder = new Decoder(getConf(), codec);
 

@@ -1804,9 +1804,9 @@
   </target>
 
   <target name="ivy-download" description="To download ivy" unless="offline">
-    <retry retrycount="10">
-      <get src="${ivy_repo_url}" dest="${ivy.jar}" usetimestamp="true"/>
-    </retry>
+    <!--<retry retrycount="10">-->
+      <!--<get src="${ivy_repo_url}" dest="${ivy.jar}" usetimestamp="true"/>-->
+    <!--</retry>-->
   </target>
 
   <!--

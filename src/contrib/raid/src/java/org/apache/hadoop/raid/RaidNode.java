@@ -1160,6 +1160,7 @@ public abstract class RaidNode implements RaidProtocol {
     //生成Encoder,hadamard算法使用hadamardEncoder.
     Encoder encoder = null;
     if(codec.id.equals("hadamard")) encoder = new HadamardEncoder(conf,codec);
+    else if(codec.id.equals("best_io")) encoder = new BestIOEncoder(conf);
     else encoder = new Encoder(conf, codec);
 
     StripeReader sReader = null;

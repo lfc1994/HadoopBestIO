@@ -326,6 +326,7 @@ public class Encoder {
    * Having buffers of the right size is extremely important. If the the
    * buffer size is not a divisor of the block size, we may end up reading
    * across block boundaries.
+   * @param outs 临时校验块文件的输出流
    */
   void encodeStripe(
     InputStream[] blocks,
@@ -357,6 +358,7 @@ public class Encoder {
         reporter.progress();
 
         // Now that we have some data to write, send it to the temp files.
+        // 校验数据的每一行写入到不同的校验块临时文件中
         for (int i = 0; i < codec.parityLength; i++) {
           outs[i].write(writeBufs[i], 0, bufSize);
           reporter.progress();
