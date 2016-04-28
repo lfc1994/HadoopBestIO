@@ -278,9 +278,9 @@ public class GaloisField {
    * @param divisor divisor polynomial
    */
   public void remainder(int[] dividend, int[] divisor) {
+    int ratio;
     for (int i = dividend.length - divisor.length; i >= 0; i--) {
-      int ratio =
-        divTable[dividend[i + divisor.length - 1]][divisor[divisor.length - 1]];
+      ratio = divTable[dividend[i + divisor.length - 1]][divisor[divisor.length - 1]];
       for (int j = 0; j < divisor.length; j++) {
         int k = j + i;
         dividend[k] = dividend[k] ^ mulTable[ratio][divisor[j]];
@@ -328,6 +328,7 @@ public class GaloisField {
   }
 
   /**
+   * 将x代入多项式p(x)
    * Substitute x into polynomial p(x). 
    * @param p input polynomial
    * @param x input field

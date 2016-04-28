@@ -2,6 +2,7 @@ package org.apache.hadoop.raid;
 
 import java.awt.Point;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 /**
@@ -64,20 +65,21 @@ public class BestIOCode extends ErasureCode{
 			}
 		}
 	}
+	// 修复前4层时不需要借助P2,P2的在data的第二行
 	public void decodeDown(byte[][] data,byte[] recovered,int[] erasedLocations){
-		recovered[0] = 0;
 		//只容忍1个擦除
 		int skipIndex = -1;
 		if(erasedLocations != null) skipIndex = erasedLocations[0];
 		for(int i = 0;i < data[0].length;i++){
+			recovered[i] = 0;
 			for(int j = 0;j < data.length;j++){
-				if(j == skipIndex) continue;
+				if(j == skipIndex || j == 1) continue;
 				recovered[i] ^= data[j][i];
 			}
 		}
 	}
 	public void decodeHalf(byte[][] data,byte[] recovered){
-		decodeDown(data,recovered,null);
+		encodeSingle(data,recovered);
 	}
 	@Override
 	public void encodeBulk(byte[][] inputs, byte[][] outputs) {

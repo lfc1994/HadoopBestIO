@@ -31,7 +31,7 @@ public class ReedSolomonCode extends ErasureCode {
   private int[] generatingPolynomial;//生成多项式
   private int PRIMITIVE_ROOT = 2;//原根
   private int[] primitivePower;
-  private GaloisField GF = GaloisField.getInstance();//优有限域
+  private GaloisField GF = GaloisField.getInstance();//有限域
   private int[] errSignature;
   private int[] paritySymbolLocations;
   private int[] dataBuff;

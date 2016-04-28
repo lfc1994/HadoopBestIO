@@ -165,21 +165,30 @@ public class BestIOEncoder extends Encoder {
 				// 打印encode p1部分信息
 				int level = (int)encoded/bufSize;
 				level ++;
-				if(level == 1){
-					System.out.print("level 1 5bytes p1 : ");
+
+				System.out.println("parity 1 check (5 bytes from level "+level+"): ");
+				for(int i = 0;i < 4;i++){
 					for(int j = 0;j < 5;j++){
-						System.out.print(writeBufs[0][j]+",");
+						System.out.printf("%02x,", ttmp[i][j]);
 					}
 					System.out.println();
 				}
+				System.out.println();
+
 				if(level == 2 || level == 3 || level == 5){
 					for(int j = 0;j <5;j++){
 						switch (level){
-							case 2:System.out.print("node (1,2) :"+ttmp[0][j]+",");
+							case 2:
+								if(j == 0) System.out.print("node (1,2) :");
+								System.out.printf("%02x,",ttmp[0][j]);
 								break;
-							case 3:System.out.print("node (2,3) :"+ttmp[1][j]+",");
+							case 3:
+								if(j == 0) System.out.print("node (2,3) :");
+								System.out.printf("%02x,",ttmp[1][j]);
 								break;
-							case 5:System.out.print("node (3,5) :"+ttmp[2][j]+",");
+							case 5:
+								if(j == 0) System.out.print("node (3,5) :");
+								System.out.printf("%02x,",ttmp[2][j]);
 								break;
 						}
 					}
@@ -208,15 +217,25 @@ public class BestIOEncoder extends Encoder {
 
 					//打印一组信息
 					if(i == 0){
-						System.out.print("down ("+p.x+","+p.y+") : ");
+						System.out.print("from tmp file ("+p.x+","+p.y+") : ");
 						for(int k = 0;k < 5;k++){
-							System.out.print(readBufs[j][k]+",");
+							System.out.printf("%02x,",readBufs[j][k]);
 						}
 						System.out.println();
 					}
 				}
 				//编码P2
-				bestCode.encodeSingle(readBufs,writeBufs[1]);
+				bestCode.encodeSingle(readBufs, writeBufs[1]);
+
+				// 打印第一层的p2
+				if(i == 0){
+					System.out.print("p2 :");
+					for(int n = 0;n < 5;n++){
+						System.out.printf("%02x,",writeBufs[1][n]);
+					}
+					System.out.println();
+				}
+
 				outs[1].write(writeBufs[1], 0, bufSize);
 			}
 		}finally {

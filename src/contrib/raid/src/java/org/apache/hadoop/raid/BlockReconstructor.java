@@ -107,13 +107,19 @@ abstract class BlockReconstructor extends Configured {
 					codec, srcPath, getConf());
 			if (ppair != null) {
 				Decoder decoder = null;
-				if(codec.id.equals("rs_local")){
-					decoder = new LocalRSDecoder(getConf());
-				}else if(codec.id.equals("best_io")){
-					decoder = new BestIODecoder(getConf());
+				switch (codec.id){
+					case "rs_local":
+						decoder = new LocalRSDecoder(getConf());
+						break;
+					case "best_io":
+						decoder = new BestIODecoder(getConf());
+						break;
+					case "lrc1":
+						decoder = new LRC1Decoder(getConf());
+						break;
+					default:
+						decoder = new Decoder(getConf(), codec);
 				}
-				else decoder = new Decoder(getConf(), codec);
-
 				return processFile(srcPath, ppair, decoder, context);
 			}
 		}

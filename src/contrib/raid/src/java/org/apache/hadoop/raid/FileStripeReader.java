@@ -86,10 +86,10 @@ public class FileStripeReader extends StripeReader {
       ) throws IOException {
     final long blockSize = srcStat.getBlockSize();
 
-    LOG.info("buildOneInput srcfile " + srcFile + " srclen " + srcStat.getLen() + 
-        " parityfile " + parityFile + " paritylen " + parityStat.getLen() +
-        " stripeindex " + stripeStartIdx + " locationindex " + locationIndex +
-        " offsetinblock " + offsetInBlock);
+//    LOG.info("buildOneInput srcfile " + srcFile + " srclen " + srcStat.getLen() +
+//        " parityfile " + parityFile + " paritylen " + parityStat.getLen() +
+//        " stripeindex " + stripeStartIdx + " locationindex " + locationIndex +
+//        " offsetinblock " + offsetInBlock);
     if (locationIndex < codec.parityLength) {
       return this.getParityFileInput(locationIndex, parityFile,
           parityFs, parityStat, offsetInBlock);
@@ -99,11 +99,11 @@ public class FileStripeReader extends StripeReader {
       int blockIdx = (int)(codec.stripeLength * stripeStartIdx + blockIdxInStripe);
       long offset = blockSize * blockIdx + offsetInBlock;
       if (offset >= srcStat.getLen()) {
-        LOG.info("Using zeros for " + srcFile + ":" + offset +
+        LOG.info("Using zeros for srcFile" + ":" + offset/1024/1024 +
           " for location " + locationIndex);
         return new RaidUtils.ZeroInputStream(blockSize * (blockIdx + 1));
       } else {
-        LOG.info("Opening " + srcFile + ":" + offset +
+        LOG.info("Opening srcFile" + ":" + offset/1024/1024/64 +
                  " for location " + locationIndex);
         FSDataInputStream s = fs.open(
             srcFile, conf.getInt("io.file.buffer.size", 64 * 1024));

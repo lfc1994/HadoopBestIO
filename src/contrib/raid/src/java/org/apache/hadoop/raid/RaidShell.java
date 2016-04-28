@@ -149,8 +149,8 @@ public class RaidShell extends Configured implements Tool {
     throws IOException {
     LOG.info("RaidShell connecting to " + raidNodeAddr);
     return (RaidProtocol)RPC.getProxy(RaidProtocol.class,
-        RaidProtocol.versionID, raidNodeAddr, ugi, conf,
-        NetUtils.getSocketFactory(conf, RaidProtocol.class));
+            RaidProtocol.versionID, raidNodeAddr, ugi, conf,
+            NetUtils.getSocketFactory(conf, RaidProtocol.class));
   }
 
   private static RaidProtocol createRaidnode(RaidProtocol rpcRaidnode)
@@ -284,7 +284,11 @@ public class RaidShell extends Configured implements Tool {
     }
 
     try {
-      if ("-showConfig".equals(cmd)) {
+      if("-test".equals(cmd)){
+        initializeLocal(conf);
+        new CodeTestUtils(argv,i,conf).test();
+        exitCode = 0;
+      } else if ("-showConfig".equals(cmd)) {
         initializeRpc(conf, RaidNode.getAddress(conf));
         exitCode = showConfig(cmd, argv, i);
       } else if ("-recover".equals(cmd)) {

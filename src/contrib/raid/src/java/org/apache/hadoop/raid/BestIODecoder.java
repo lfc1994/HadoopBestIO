@@ -20,6 +20,7 @@ import java.util.zip.CRC32;
  * Created by JackJay on 16/4/12.
  */
 public class BestIODecoder extends Decoder{
+	public static final Log LOG = LogFactory.getLog("BestIODecoder");
 	private int[] erasedLocationsArray = null;
 	private int[] locationsToReadArray = null;
 	private int[] locationsNotToReadArray = null;
@@ -32,6 +33,7 @@ public class BestIODecoder extends Decoder{
 			super(conf);
 		}
 
+		// offset 无用,只是因为重写
 		@Override
 		public void writeTmpFiles(byte[][] data,int offset) {
 			int bufLength = data[0].length;
@@ -82,7 +84,7 @@ public class BestIODecoder extends Decoder{
 						} catch (IOException e) {
 							System.out.print("init startOffset error : get pos failed");
 						}
-						System.out.print(startOffsets[i]+",");
+						System.out.print(startOffsets[i]/1024/1024/64+",");
 					}
 				}
 				System.out.println();
@@ -167,6 +169,7 @@ public class BestIODecoder extends Decoder{
 		bestIOCode = (BestIOCode)code;
 	}
 
+	// 当最后一个文件块内容长度小于blockSize时存在limit 有关的bug
 	@Override
 	long fixErasedBlockImpl(FileSystem srcFs, Path srcFile, FileSystem parityFs, Path parityFile,
 							boolean fixSource, long blockSize, long errorOffset,
@@ -196,9 +199,8 @@ public class BestIODecoder extends Decoder{
 		erasedLocations = new ArrayList<Integer>();
 		locationsToRead = new ArrayList<Integer>(codec.parityLength + codec.stripeLength);
 		erasedLocations.add(erasedLocationToFix);
-		LOG.info("Need to write " + limit +
-				" bytes for my erased location index " + myErasedLoc);
-
+		System.out.printf("Need to write %d Mb for erasedLoc %d in stripe %d\n",
+				limit/1024/1024,erasedLocationToFix,lp.getStripeIdx());
 
 		/**
 		 * 初始化其他变量
@@ -240,7 +242,7 @@ public class BestIODecoder extends Decoder{
 							writeBufs[i] = new byte[bufSize];
 						}
 						parallelReader = new BestIOParallelReader(reporter, inputs,myErasedLoc,
-								(int) Math.min(bufSize, limit), blockSize/2);
+								bufSize, blockSize/2);
 						parallelReader.start();
 					}
 
@@ -249,7 +251,7 @@ public class BestIODecoder extends Decoder{
 					 */
 					// read过程中捕获到的异常将会抛出,并添加错误位置到erasedLocations
 					ParallelStreamReader.ReadResult readResult = readFromInputs(
-							erasedLocations, limit, reporter, parallelReader);
+							erasedLocations, bufSize, reporter, parallelReader);
 					fillLocations();
 
 					// 解码并保存所有数据到临时文件
@@ -265,17 +267,21 @@ public class BestIODecoder extends Decoder{
 					ttmp[3] = readResult.readBufs[0];// p1
 					ttmp[4] = readResult.readBufs[1];// p2
 
-					System.out.println("level "+bestIOCode.downMap[myErasedLoc][toDown/bufSize]+":");
+					helper.writeTmpFiles(ttmp,(int)toDown);
+
+					// 打印信息,调试用
+					System.out.println("download and recover level "
+							+bestIOCode.downMap[myErasedLoc][toDown/bufSize]+":");
 					for(int i = 0;i < 5;i++){
-						System.out.print("ttmp["+i+"]:");
-						for(int j = 0;j < 10;j++){
-							System.out.print(ttmp[i][j]+",");
+						if(i == myErasedLoc) System.out.printf("recovered [%d]:",i);
+						else System.out.printf("downloaded [%d]:",i);
+						for(int j = 0;j < 5;j++){
+							System.out.printf("%02x,", ttmp[i][j]);
 						}
 						System.out.println();
 					}
 					System.out.println();
 
-					helper.writeTmpFiles(ttmp,(int)toDown);
 
 					// 更新numReadBytes
 					for (int readNum : readResult.numRead) numReadBytes += readNum;
@@ -295,7 +301,7 @@ public class BestIODecoder extends Decoder{
 					RaidUtils.closeStreams(inputs);
 				}
 			}
-			LOG.info(getClass()+":decode and save finished");
+			LOG.info("Start to read Tmp file and recover remained data");
 			// 关闭临时文件输出流
 			helper.closeTmpFilesOut();
 			boolean recovered;
@@ -307,6 +313,7 @@ public class BestIODecoder extends Decoder{
 				recovered = false;
 				for(int j = 0;j < 4;j++){
 					if(bestIOCode.downMap[myErasedLoc][j] == i+1) {
+						System.out.printf("Recover level %d from tmp file %d offset %d*8M\n",i+1, myErasedLoc, j);
 						recovered = true;
 						helper.tmpFilesIn[myErasedLoc].seek(j * bufSize);
 						helper.tmpFilesIn[myErasedLoc].read(recoveredData, 0, bufSize);
@@ -314,20 +321,21 @@ public class BestIODecoder extends Decoder{
 					}
 				}
 				if(!recovered){
+					System.out.println("Recover level "+(i+1));
 					for(Point[] ps : bestIOCode.recoverMap){
 						// (损坏节点,第几层)
 						if(ps[0].x-1 == myErasedLoc && ps[0].y-1 == i){
 							neededData = new byte[ps.length-1][bufSize];
 							for(int k = 1;k < ps.length;k++){
-								System.out.print("reading ("+ps[k].x+","+ps[k].y+") ");
 								for(int m = 0;m < 4;m++){
 									if(bestIOCode.downMap[myErasedLoc][m] == ps[k].y){
+										System.out.printf("reading node %d level %d from tmpfile %d offset %d*8M\n",
+												ps[k].x,ps[k].y,ps[k].x-1,m);
 										helper.tmpFilesIn[ps[k].x-1].seek(m * bufSize);
 										helper.tmpFilesIn[ps[k].x-1].read(neededData[k-1], 0, bufSize);
 									}
 								}
 							}
-							System.out.println();
 							bestIOCode.decodeHalf(neededData, recoveredData);
 							break;
 						}
@@ -342,7 +350,7 @@ public class BestIODecoder extends Decoder{
 					crc.update(recoveredData, 0, toWrite);
 				}
 				written += toWrite;
-				LOG.info("write level: "+(i+1)+" recoveredData[0]"+recoveredData[0]);
+				System.out.printf("write recovered level %d firstByte: 0x%02x\n\n",(i+1),recoveredData[0]);
 			}
 			helper.closeTmpFilesIn();
 			helper.removeTmpFiles();

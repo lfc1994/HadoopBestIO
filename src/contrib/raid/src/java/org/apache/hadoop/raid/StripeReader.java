@@ -222,7 +222,7 @@ public abstract class StripeReader {
 		int parityBlockIdx = (int) (codec.parityLength * stripeStartIdx + locationIndex);
 		long offset = parityStat.getBlockSize() * parityBlockIdx + offsetInBlock;
 		assert (offset < parityStat.getLen());
-		LOG.info("Opening " + parityFile + ":" + offset +
+		LOG.info("Opening parityFile" + ":" + offset/1024/1024/64 +
 				" for location " + locationIndex);
 		FSDataInputStream s = parityFs.open(
 				parityFile, conf.getInt("io.file.buffer.size", 64 * 1024));
