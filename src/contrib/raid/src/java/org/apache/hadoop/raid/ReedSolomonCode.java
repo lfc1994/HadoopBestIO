@@ -96,8 +96,7 @@ public class ReedSolomonCode extends ErasureCode {
   }
   
   /**
-   * This function (actually, the GF.remainder() function) will modify
-   * the "inputs" parameter.
+   * fixed
    */
   @Override
   public void encodeBulk(byte[][] inputs, byte[][] outputs) {
@@ -116,7 +115,7 @@ public class ReedSolomonCode extends ErasureCode {
       data[i] = outputs[i];
     }
     for (int i = 0; i < stripeSize; i++) {
-      data[i + paritySize] = inputs[i];
+      System.arraycopy(inputs[i],0,data[i + paritySize],0,inputs[i].length);
     }
     
     // Compute the remainder
